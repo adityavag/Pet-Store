@@ -1,10 +1,11 @@
-import logo from './logo.svg';
-import './App.css';
-
+import Footer from "./components/Footer";
+import List from "./components/List";
 function App() {
   return (
-    <div className='bg-cyan-500'>
-      <h2>Puppies App</h2>
+    <div className="bg-[#111827]">
+      <h1 className="text-5xl font-bold text-[#ffffff] text-center p-4">Adopt Puppy 🐶</h1>
+      <List/>
+      <Footer/>
     </div>
   );
 }
