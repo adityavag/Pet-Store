@@ -1,5 +1,6 @@
 import React from 'react'
-
+import { useState } from 'react'
+import Service from "../services/Service"
 export default function AddPuppy() {
   return (
     <div>
@@ -24,7 +25,40 @@ export default function AddPuppy() {
                         </div>
                         <div className="mt-4">
                             <label className="block text-sm font-medium text-gray-700 undefined">
-                                Breed
+                                Owner Name
+                            </label>
+                            <div className="flex flex-col items-start">
+                                <input
+                                    type="text"
+                                    className="block w-full mt-1 p-2 border-gray-300 rounded-sm shadow-sm "
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 undefined">
+                                Age
+                            </label>
+                            <div className="flex flex-col items-start">
+                                <input
+                                    type="number"
+                                    className="block w-full mt-1 p-2 border-gray-300 rounded-sm shadow-sm "
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 undefined">
+                                Type
+                            </label>
+                            <div className="flex flex-col items-start">
+                                <input
+                                    type="text"
+                                    className="block w-full mt-1 p-2 border-gray-300 rounded-sm shadow-sm "
+                                />
+                            </div>
+                        </div>
+                        <div className="mt-4">
+                            <label className="block text-sm font-medium text-gray-700 undefined">
+                                Gender
                             </label>
                             <div className="flex flex-col items-start">
                                 <input

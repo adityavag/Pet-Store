@@ -6,7 +6,7 @@ class Service {
     savePet(pet){
         return axios.post(API_BASE_URL,pet)
     }
-    getPet(){
+    getPets(){
         return axios.get(API_BASE_URL);
     }
     getPetById(id){
