@@ -1,15 +1,20 @@
-import AddPuppy from "./components/AddPuppy";
+import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import List from "./components/List";
+import AddPet from "./components/AddPet"
+import UpdatePet from "./components/UpdatePet"
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 function App() {
   return (
-    // <div className="bg-[#111827] bg-cover">
-    //   <h1 className="text-5xl font-bold text-[#ffffff] text-center p-4">Adopt Puppy</h1>
-    //   <List/>
-    //   <Footer/>
-    // </div>
     <>
-    <AddPuppy/>
+    <BrowserRouter>
+    <Routes>
+      <Route index element = {<List/>} />
+      <Route path="/" element = {<List/>} ></Route>
+      <Route path="/addPet" element = {<AddPet/>} ></Route>
+      <Route path="/editPet/:id" element = {<UpdatePet/>} ></Route>
+    </Routes>
+    </BrowserRouter>
     </>
   );
 }

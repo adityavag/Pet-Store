@@ -6,10 +6,10 @@ export default function AddPuppy() {
             <div className="flex flex-col items-center min-h-screen pt-6 sm:justify-center sm:pt-0 bg-[#111827]">
                 <div>
                         <h3 className="text-4xl font-bold text-white">
-                            Add Puppy
+                            Add Pet
                         </h3>
                 </div>
-                <div className="w-full px-6 py-4 mt-6 overflow-hidden bg-white shadow-md sm:max-w-md sm:rounded-lg">
+                <div className="w-full px-6 py-4 mt-6 overflow-hidden bg-white shadow-md sm:max-w-md sm:rounded-lg sm:mx-8">
                     <form>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 undefined">

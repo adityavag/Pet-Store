@@ -1,20 +1,22 @@
 import axios from "axios";
 
-const API_BASE_URL = '';
+const API_BASE_URL = 'http://localhost:8080/pets';
 
 class Service {
-    savePuppy(){
-        return null;
+    savePet(pet){
+        return axios.post(API_BASE_URL,pet)
     }
-
-    getPuppy(){
-        return null;
+    getPet(){
+        return axios.get(API_BASE_URL);
     }
-    deletePuppy(){
-        return null;
+    getPetById(id){
+        return axios.get(API_BASE_URL + "/" + id);
     }
-    updatePuppy(){
-        return null;
+    deletePet(id){
+        return axios.delete(API_BASE_URL + "/" + id);
+    }
+    updatePet(pet, id){
+        return axios.put(API_BASE_URL + "/" + id);
     }
 }
 
