@@ -1,4 +1,4 @@
-## Project : Puppies App
+## Project : Pet Store
 This app is built using `SpringBoot` and `React` .
 ## Tech Stack
 Frontend:
