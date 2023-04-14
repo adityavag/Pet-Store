@@ -1,4 +1,4 @@
-## Project : Pet Store
+## Project : [Pet Store](https://pestore.vercel.app/)
 This app is built using `SpringBoot` and `React` .
 ## Tech Stack
 Frontend:
@@ -11,4 +11,7 @@ Backend:
 ```javascript
 SpringBoot
 MySQL
+
 ```
+## Backend Repository
+[Pet Store API GitHub Repository Link](https://github.com/adityavag/Pet-Store-API)
