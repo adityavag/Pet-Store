@@ -11,7 +11,6 @@ export default function Card({props}) {
     </div>
     <div class="flex flex-col items-center pb-10">
         <img class="w-24 h-24 mb-3 rounded-full " alt={props.name} src={Pablo}/>
-        <h5 class="mb-1 text-xl font-semibold">{props.id}</h5>
         <span class="text-sm font-semibold ">{props.name} is a {props.type}</span>
         <span class="text-sm font-semibold ">{props.name} is {props.age} old</span>
         <span class="text-sm font-semibold ">{props.name} is a {props.gender}</span>

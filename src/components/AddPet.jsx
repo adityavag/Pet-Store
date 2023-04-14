@@ -1,6 +1,5 @@
 import React from 'react'
-import { useState } from 'react'
-import Service from "../services/Service"
+
 export default function AddPuppy() {
   return (
     <div>
