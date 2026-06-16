@@ -8,6 +8,19 @@ export default function App() {
   const [editingPet, setEditingPet] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [error, setError] = useState('');
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState(null);
+  const [removeImage, setRemoveImage] = useState(false);
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    if (imagePreview && !imagePreview.startsWith('http')) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(false);
+  };
 
   useEffect(() => {
     fetchPets();
@@ -43,6 +56,9 @@ export default function App() {
     setName('');
     setSpecies('');
     setAge('');
+    setImageFile(null);
+    setImagePreview(null);
+    setRemoveImage(false);
     setError('');
     setIsModalOpen(true);
   };
@@ -52,8 +68,36 @@ export default function App() {
     setName(pet.name);
     setSpecies(pet.species);
     setAge(pet.age);
+    setImageFile(null);
+    setImagePreview(pet.image_url || null);
+    setRemoveImage(false);
     setError('');
     setIsModalOpen(true);
+  };
+
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      setImageFile(file);
+      if (imagePreview && !imagePreview.startsWith('http')) {
+        URL.revokeObjectURL(imagePreview);
+      }
+      setImagePreview(URL.createObjectURL(file));
+      setRemoveImage(false);
+    }
+  };
+
+  const handleClearImage = () => {
+    setImageFile(null);
+    if (imagePreview && !imagePreview.startsWith('http')) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImagePreview(null);
+    setRemoveImage(true);
+    const fileInput = document.getElementById('pet-image');
+    if (fileInput) {
+      fileInput.value = '';
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -62,31 +106,39 @@ export default function App() {
       setError('Please fill in all details');
       return;
     }
-    const petData = { name, species, age: parseInt(age) };
+    
+    const formData = new FormData();
+    formData.append('name', name.trim());
+    formData.append('species', species.trim());
+    formData.append('age', age);
+    if (imageFile) {
+      formData.append('image', imageFile);
+    } else if (removeImage) {
+      formData.append('removeImage', 'true');
+    }
+
     try {
       if (editingPet) {
         const response = await fetch(`http://localhost:3000/pets/${editingPet.id}`, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(petData)
+          body: formData
         });
         if (response.ok) {
           const updated = await response.json();
           setPets(pets.map(pet => pet.id === editingPet.id ? updated : pet));
-          setIsModalOpen(false);
+          closeModal();
         } else {
           setError('Failed to update pet');
         }
       } else {
         const response = await fetch('http://localhost:3000/pets', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(petData)
+          body: formData
         });
         if (response.ok) {
           const created = await response.json();
           setPets([...pets, created]);
-          setIsModalOpen(false);
+          closeModal();
         } else {
           setError('Failed to add pet');
         }
@@ -152,22 +204,37 @@ export default function App() {
             {pets.map((pet) => (
               <div
                 key={pet.id}
-                className="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between group"
+                className="bg-white border border-slate-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between group"
               >
                 <div>
-                  <div className="flex justify-between items-start gap-4">
-                    <h3 className="text-lg font-bold text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">
-                      {pet.name}
-                    </h3>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getSpeciesBadge(pet.species)}`}>
-                      {pet.species}
-                    </span>
+                  {pet.image_url ? (
+                    <div className="h-48 w-full overflow-hidden bg-slate-100 border-b border-slate-50 relative">
+                      <img
+                        src={pet.image_url}
+                        alt={pet.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    </div>
+                  ) : (
+                    <div className="h-48 w-full bg-slate-50 border-b border-slate-50 flex items-center justify-center text-4xl select-none">
+                      🐾
+                    </div>
+                  )}
+                  <div className="p-6">
+                    <div className="flex justify-between items-start gap-4">
+                      <h3 className="text-lg font-bold text-slate-800 tracking-tight group-hover:text-indigo-600 transition-colors">
+                        {pet.name}
+                      </h3>
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${getSpeciesBadge(pet.species)}`}>
+                        {pet.species}
+                      </span>
+                    </div>
+                    <p className="text-slate-500 text-sm mt-3 font-medium">
+                      Age: <span className="text-slate-800 font-bold">{pet.age}</span> {pet.age === 1 ? 'year' : 'years'} old
+                    </p>
                   </div>
-                  <p className="text-slate-500 text-sm mt-3 font-medium">
-                    Age: <span className="text-slate-800 font-bold">{pet.age}</span> {pet.age === 1 ? 'year' : 'years'} old
-                  </p>
                 </div>
-                <div className="flex gap-2 mt-6 pt-4 border-t border-slate-50">
+                <div className="px-6 pb-6 flex gap-2 pt-4 border-t border-slate-50">
                   <button
                     onClick={() => openEditModal(pet)}
                     className="flex-1 bg-slate-50 hover:bg-indigo-50 text-slate-600 hover:text-indigo-600 font-semibold text-xs py-2 rounded-xl transition-all"
@@ -195,7 +262,7 @@ export default function App() {
                 {editingPet ? 'Update Pet Details' : 'Add New Pet'}
               </h2>
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={closeModal}
                 className="text-slate-400 hover:text-slate-600 font-bold text-xl"
               >
                 ×
@@ -243,10 +310,40 @@ export default function App() {
                   required
                 />
               </div>
+              <div>
+                <label htmlFor="pet-image" className="block text-xs font-semibold text-slate-500 mb-1.5 uppercase tracking-wider">
+                  Pet Image
+                </label>
+                <div className="flex items-center gap-4 mt-1">
+                  {imagePreview && (
+                    <div className="w-16 h-16 rounded-xl overflow-hidden bg-slate-100 border border-slate-200 flex-shrink-0">
+                      <img src={imagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    </div>
+                  )}
+                  <div className="flex-1">
+                    <input
+                      id="pet-image"
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-600 hover:file:bg-indigo-100 cursor-pointer"
+                    />
+                    {imagePreview && (
+                      <button
+                        type="button"
+                        onClick={handleClearImage}
+                        className="text-xs text-rose-500 hover:text-rose-700 font-semibold mt-1 block"
+                      >
+                        Remove Image
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
               <div className="flex gap-3 pt-4 border-t border-slate-50 mt-6">
                 <button
                   type="button"
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={closeModal}
                   className="flex-1 bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold text-sm py-2.5 rounded-xl transition-all"
                 >
                   Cancel
