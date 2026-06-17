@@ -70,36 +70,61 @@ app.use((req, res, next) => {
   next();
 });
 
-// Configure Redis Client for ElastiCache / Local Redis
-const redisClient = redis.createCluster({
-  rootNodes: [
-    {
-      url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
-    }
-  ],
-  defaults: {
-    socket: {
-      connectTimeout: 1000 // fast timeout for initial connection attempts
-    }
-  }
-});
 
+const rawRedisUrl = process.env.REDIS_URL;
+let redisClient;
+
+// Detect if we are targeting an AWS ElastiCache Cluster with Cluster Mode Enabled
+const isAWSCluster = rawRedisUrl && rawRedisUrl.includes('clustercfg.');
+
+if (isAWSCluster) {
+  // Ensure the string features the required structural protocol prefix cleanly
+  const cleanClusterUrl = rawRedisUrl.startsWith('redis://') ? rawRedisUrl : `redis://${rawRedisUrl}`;
+  console.log(`[Production] Spawning ElastiCache Cluster connection targeting: ${cleanClusterUrl}`);
+
+  redisClient = redis.createCluster({
+    rootNodes: [
+      { url: cleanClusterUrl }
+    ],
+    defaults: {
+      socket: {
+        connectTimeout: 2000,
+        tls: true // AWS ElastiCache clusters with encryption enabled require explicit TLS/SSL handshakes
+      }
+    }
+  });
+} else {
+  // Local development fallback configuration or standard standalone Redis environment variables
+  let localUrl = rawRedisUrl;
+
+  if (!localUrl && process.env.REDIS_HOST) {
+    localUrl = `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`;
+  } else if (!localUrl) {
+    localUrl = 'redis://127.0.0.1:6379'; // Pure local machine fallback default
+  }
+
+  console.log(`[Development] Spawning standalone local Redis connection targeting: ${localUrl}`);
+  redisClient = redis.createClient({ url: localUrl });
+}
+
+// Global Lifecycle Event Listeners
 redisClient.on('error', (err) => {
-  console.error('Redis Client Error:', err);
+  console.error('Redis Client Error Boundary:', err.message);
 });
 
 redisClient.on('connect', () => {
-  console.log('Successfully connected to Redis cache');
+  console.log('Successfully established connection to Redis caching layer.');
 });
 
-// Establish initial async connection to Redis
+// Clean non-blocking connection execution
 (async () => {
   try {
     await redisClient.connect();
   } catch (err) {
-    console.error('Failed to connect to Redis initially:', err);
+    console.error('Initial Redis background handshake deferred or failed:', err.message);
   }
 })();
+// ------------------------------------------
 
 // Helper function to read from cache with fallback
 async function getCache(key) {
