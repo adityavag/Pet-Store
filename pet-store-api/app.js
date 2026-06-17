@@ -71,10 +71,16 @@ app.use((req, res, next) => {
 });
 
 // Configure Redis Client for ElastiCache / Local Redis
-const redisClient = redis.createClient({
-  url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
-  socket: {
-    connectTimeout: 1000 // fast timeout for initial connection attempts
+const redisClient = redis.createCluster({
+  rootNodes: [
+    {
+      url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`
+    }
+  ],
+  defaults: {
+    socket: {
+      connectTimeout: 1000 // fast timeout for initial connection attempts
+    }
   }
 });
 
@@ -97,7 +103,7 @@ redisClient.on('connect', () => {
 
 // Helper function to read from cache with fallback
 async function getCache(key) {
-  if (!redisClient.isReady) {
+  if (!redisClient.isOpen) {
     return null;
   }
   try {
@@ -111,7 +117,7 @@ async function getCache(key) {
 
 // Helper function to write to cache with TTL
 async function setCache(key, value, expiration = 3600) {
-  if (!redisClient.isReady) {
+  if (!redisClient.isOpen) {
     return;
   }
   try {
@@ -125,7 +131,7 @@ async function setCache(key, value, expiration = 3600) {
 
 // Helper function to delete from cache
 async function delCache(key) {
-  if (!redisClient.isReady) {
+  if (!redisClient.isOpen) {
     return;
   }
   try {
