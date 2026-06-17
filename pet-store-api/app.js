@@ -12,6 +12,7 @@ require('dotenv').config();
 const app = express();
 app.use(morgan('dev'));
 app.use(express.json());
+app.use(cors()); // handles Access-Control-Allow-* headers and OPTIONS preflight for you
 
 const REGION = process.env.AWS_REGION;
 const s3Client = new S3Client({
@@ -59,55 +60,32 @@ async function getSignedDownloadUrl(imageUrl) {
   }
 }
 
-app.use(cors());
-app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-  next();
-});
-
-
-const rawRedisUrl = process.env.REDIS_URL;
+// --- CLEAN, DETERMINISTIC REDIS CONFIGURATION ---
+const rawRedisUrl = process.env.REDIS_URL || '';
 let redisClient;
 
-// Detect if we are targeting an AWS ElastiCache Cluster with Cluster Mode Enabled
-const isAWSCluster = rawRedisUrl && rawRedisUrl.includes('clustercfg.');
+let redisTargetUrl = rawRedisUrl;
 
-if (isAWSCluster) {
-  // Ensure the string features the required structural protocol prefix cleanly
-  const cleanClusterUrl = rawRedisUrl.startsWith('redis://') ? rawRedisUrl : `redis://${rawRedisUrl}`;
-  console.log(`[Production] Spawning ElastiCache Cluster connection targeting: ${cleanClusterUrl}`);
-
-  redisClient = redis.createCluster({
-    rootNodes: [
-      { url: cleanClusterUrl }
-    ],
-    defaults: {
-      socket: {
-        connectTimeout: 2000,
-        tls: true // AWS ElastiCache clusters with encryption enabled require explicit TLS/SSL handshakes
-      }
-    }
-  });
-} else {
-  // Local development fallback configuration or standard standalone Redis environment variables
-  let localUrl = rawRedisUrl;
-
-  if (!localUrl && process.env.REDIS_HOST) {
-    localUrl = `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`;
-  } else if (!localUrl) {
-    localUrl = 'redis://127.0.0.1:6379'; // Pure local machine fallback default
-  }
-
-  console.log(`[Development] Spawning standalone local Redis connection targeting: ${localUrl}`);
-  redisClient = redis.createClient({ url: localUrl });
+if (!redisTargetUrl && process.env.REDIS_HOST) {
+  redisTargetUrl = `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT || 6379}`;
+} else if (!redisTargetUrl) {
+  redisTargetUrl = 'redis://127.0.0.1:6379';
 }
 
-// Global Lifecycle Event Listeners
+if (redisTargetUrl && !redisTargetUrl.startsWith('redis://') && !redisTargetUrl.startsWith('rediss://')) {
+  redisTargetUrl = `redis://${redisTargetUrl}`;
+}
+
+console.log(`Connecting to Redis: ${redisTargetUrl}`);
+
+redisClient = redis.createClient({
+  url: redisTargetUrl,
+  socket: {
+    connectTimeout: 5000
+  }
+});
+
+// Global Event Monitoring
 redisClient.on('error', (err) => {
   console.error('Redis Client Error Boundary:', err.message);
 });
@@ -116,15 +94,15 @@ redisClient.on('connect', () => {
   console.log('Successfully established connection to Redis caching layer.');
 });
 
-// Clean non-blocking connection execution
+// Asynchronous backend handshake execution
 (async () => {
   try {
     await redisClient.connect();
   } catch (err) {
-    console.error('Initial Redis background handshake deferred or failed:', err.message);
+    console.error('Initial Redis background handshake deferred:', err.message);
   }
 })();
-// ------------------------------------------
+// ------------------------------------------------
 
 // Helper function to read from cache with fallback
 async function getCache(key) {
@@ -165,6 +143,36 @@ async function delCache(key) {
     console.error(`Error deleting key ${key} from Redis cache:`, err);
   }
 }
+
+// Establish MySQL connection to ensure database and table layout exist
+(async () => {
+  try {
+    const connection = await mysql.createConnection({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD
+    });
+
+    const dbName = process.env.DB_DATABASE || 'pet_store';
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\``);
+    await connection.query(`USE \`${dbName}\``);
+
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS pets (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        species VARCHAR(255) NOT NULL,
+        age INT NOT NULL,
+        image_url VARCHAR(512) NULL
+      )
+    `);
+
+    console.log(`Database "${dbName}" and "pets" table initialized successfully.`);
+    await connection.end();
+  } catch (err) {
+    console.error('Failed to initialize MySQL database and table layout:', err.message);
+  }
+})();
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -275,7 +283,6 @@ app.post('/pets', upload.single('image'), async (req, res) => {
       'INSERT INTO pets (name, species, age, image_url) VALUES (?, ?, ?, ?)',
       [name, species, parseInt(age), imageUrl]
     );
-    // Invalidate list cache
     await delCache('pets:all');
     const signedUrl = await getSignedDownloadUrl(imageUrl);
     res.status(201).json({ id: result.insertId, name, species, age: parseInt(age), image_url: signedUrl });
@@ -310,7 +317,6 @@ app.put('/pets/:id', upload.single('image'), async (req, res) => {
       'UPDATE pets SET name = ?, species = ?, age = ?, image_url = ? WHERE id = ?',
       [name, species, parseInt(age), finalImageUrl, req.params.id]
     );
-    // Invalidate both the list cache and the specific pet cache
     const id = req.params.id;
     await delCache('pets:all');
     await delCache(`pets:id:${id}`);
@@ -328,7 +334,6 @@ app.delete('/pets/:id', async (req, res) => {
     if (result.affectedRows === 0) {
       return res.status(404).json({ error: 'Pet not found' });
     }
-    // Invalidate both the list cache and the specific pet cache
     await delCache('pets:all');
     await delCache(`pets:id:${id}`);
     res.status(204).end();
