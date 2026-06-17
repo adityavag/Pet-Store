@@ -5,9 +5,11 @@ const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
 const multer = require('multer');
 const crypto = require('crypto');
 const redis = require('redis');
+const morgan = require('morgan');
 require('dotenv').config();
 
 const app = express();
+app.use(morgan('dev'));
 app.use(express.json());
 
 const REGION = process.env.AWS_REGION || 'ap-southeast-2';
