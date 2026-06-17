@@ -107,21 +107,51 @@ export default function App() {
       return;
     }
     
-    const formData = new FormData();
-    formData.append('name', name.trim());
-    formData.append('species', species.trim());
-    formData.append('age', age);
-    if (imageFile) {
-      formData.append('image', imageFile);
-    } else if (removeImage) {
-      formData.append('removeImage', 'true');
-    }
+    let finalImageUrl = editingPet ? editingPet.image_url : null;
 
     try {
+      if (imageFile) {
+        // 1. Get pre-signed URL from API
+        const presignRes = await fetch(
+          `http://localhost:3000/pets/presign-upload?fileName=${encodeURIComponent(
+            imageFile.name
+          )}&contentType=${encodeURIComponent(imageFile.type)}`
+        );
+        if (!presignRes.ok) {
+          throw new Error('Failed to get upload signature');
+        }
+        const { presignedUrl, publicUrl } = await presignRes.json();
+
+        // 2. Upload directly to S3
+        const uploadRes = await fetch(presignedUrl, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': imageFile.type
+          },
+          body: imageFile
+        });
+        if (!uploadRes.ok) {
+          throw new Error('Failed to upload image to S3');
+        }
+        finalImageUrl = publicUrl;
+      } else if (removeImage) {
+        finalImageUrl = null;
+      }
+
+      const payload = {
+        name: name.trim(),
+        species: species.trim(),
+        age: parseInt(age, 10),
+        imageUrl: finalImageUrl
+      };
+
       if (editingPet) {
         const response = await fetch(`http://localhost:3000/pets/${editingPet.id}`, {
           method: 'PUT',
-          body: formData
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
         });
         if (response.ok) {
           const updated = await response.json();
@@ -133,7 +163,10 @@ export default function App() {
       } else {
         const response = await fetch('http://localhost:3000/pets', {
           method: 'POST',
-          body: formData
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload)
         });
         if (response.ok) {
           const created = await response.json();
@@ -144,7 +177,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      setError('Server connection error');
+      setError(err.message || 'Server connection error');
     }
   };
 

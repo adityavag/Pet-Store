@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const mysql = require('mysql2/promise');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const multer = require('multer');
 const crypto = require('crypto');
 const redis = require('redis');
@@ -27,7 +28,7 @@ const upload = multer({
 async function uploadToS3(file) {
   const fileExtension = file.originalname.split('.').pop();
   const fileKey = `pets/${crypto.randomBytes(16).toString('hex')}.${fileExtension}`;
-  const bucketName = process.env.S3_BUCKET_NAME || 'pet-store-v2';
+  const bucketName = process.env.S3_BUCKET_NAME;
 
   await s3Client.send(new PutObjectCommand({
     Bucket: bucketName,
@@ -37,6 +38,25 @@ async function uploadToS3(file) {
   }));
 
   return `https://${bucketName}.s3.${REGION}.amazonaws.com/${fileKey}`;
+}
+
+async function getSignedDownloadUrl(imageUrl) {
+  if (!imageUrl) return null;
+  try {
+    const parsed = new URL(imageUrl);
+    const key = decodeURIComponent(parsed.pathname.substring(1));
+    const bucketName = process.env.S3_BUCKET_NAME;
+
+    const command = new GetObjectCommand({
+      Bucket: bucketName,
+      Key: key
+    });
+
+    return await getSignedUrl(s3Client, command, { expiresIn: 3600 });
+  } catch (err) {
+    console.error('Error generating pre-signed GET URL:', err);
+    return imageUrl;
+  }
 }
 
 app.use(cors());
@@ -125,19 +145,56 @@ const pool = mysql.createPool({
   queueLimit: 0
 });
 
+app.get('/pets/presign-upload', async (req, res) => {
+  try {
+    const { fileName, contentType } = req.query;
+    if (!fileName || !contentType) {
+      return res.status(400).json({ error: 'fileName and contentType are required' });
+    }
+    const fileExtension = fileName.split('.').pop();
+    const fileKey = `pets/${crypto.randomBytes(16).toString('hex')}.${fileExtension}`;
+    const bucketName = process.env.S3_BUCKET_NAME;
+
+    const command = new PutObjectCommand({
+      Bucket: bucketName,
+      Key: fileKey,
+      ContentType: contentType
+    });
+
+    const presignedUrl = await getSignedUrl(s3Client, command, { expiresIn: 300 });
+    const publicUrl = `https://${bucketName}.s3.${REGION}.amazonaws.com/${fileKey}`;
+
+    res.json({ presignedUrl, publicUrl });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate pre-signed URL: ' + err.message });
+  }
+});
+
 app.get('/pets', async (req, res) => {
   try {
     const cacheKey = 'pets:all';
     const cachedPets = await getCache(cacheKey);
     if (cachedPets) {
       console.log('Cache hit for all pets');
-      return res.json(cachedPets);
+      const petsWithSignedUrls = await Promise.all(
+        cachedPets.map(async (pet) => ({
+          ...pet,
+          image_url: await getSignedDownloadUrl(pet.image_url)
+        }))
+      );
+      return res.json(petsWithSignedUrls);
     }
 
     console.log('Cache miss for all pets. Querying MySQL database...');
     const [rows] = await pool.query('SELECT * FROM pets');
     await setCache(cacheKey, rows);
-    res.json(rows);
+    const petsWithSignedUrls = await Promise.all(
+      rows.map(async (pet) => ({
+        ...pet,
+        image_url: await getSignedDownloadUrl(pet.image_url)
+      }))
+    );
+    res.json(petsWithSignedUrls);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -150,7 +207,8 @@ app.get('/pets/:id', async (req, res) => {
     const cachedPet = await getCache(cacheKey);
     if (cachedPet) {
       console.log(`Cache hit for pet ID ${id}`);
-      return res.json(cachedPet);
+      const signedUrl = await getSignedDownloadUrl(cachedPet.image_url);
+      return res.json({ ...cachedPet, image_url: signedUrl });
     }
 
     console.log(`Cache miss for pet ID ${id}. Querying MySQL database...`);
@@ -159,19 +217,20 @@ app.get('/pets/:id', async (req, res) => {
       return res.status(404).json({ error: 'Pet not found' });
     }
     await setCache(cacheKey, rows[0]);
-    res.json(rows[0]);
+    const signedUrl = await getSignedDownloadUrl(rows[0].image_url);
+    res.json({ ...rows[0], image_url: signedUrl });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 app.post('/pets', upload.single('image'), async (req, res) => {
-  const { name, species, age } = req.body;
+  const { name, species, age, imageUrl: bodyImageUrl } = req.body;
   if (!name || !species || age === undefined) {
     return res.status(400).json({ error: 'Name, species, and age are required' });
   }
-  
-  let imageUrl = null;
+
+  let imageUrl = bodyImageUrl || null;
   if (req.file) {
     try {
       imageUrl = await uploadToS3(req.file);
@@ -187,14 +246,15 @@ app.post('/pets', upload.single('image'), async (req, res) => {
     );
     // Invalidate list cache
     await delCache('pets:all');
-    res.status(201).json({ id: result.insertId, name, species, age: parseInt(age), image_url: imageUrl });
+    const signedUrl = await getSignedDownloadUrl(imageUrl);
+    res.status(201).json({ id: result.insertId, name, species, age: parseInt(age), image_url: signedUrl });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
 app.put('/pets/:id', upload.single('image'), async (req, res) => {
-  const { name, species, age } = req.body;
+  const { name, species, age, imageUrl: bodyImageUrl } = req.body;
   if (!name || !species || age === undefined) {
     return res.status(400).json({ error: 'Name, species, and age are required' });
   }
@@ -203,8 +263,8 @@ app.put('/pets/:id', upload.single('image'), async (req, res) => {
     if (existing.length === 0) {
       return res.status(404).json({ error: 'Pet not found' });
     }
-    
-    let finalImageUrl = existing[0].image_url;
+
+    let finalImageUrl = bodyImageUrl !== undefined ? bodyImageUrl : existing[0].image_url;
     if (req.file) {
       try {
         finalImageUrl = await uploadToS3(req.file);
@@ -223,7 +283,8 @@ app.put('/pets/:id', upload.single('image'), async (req, res) => {
     const id = req.params.id;
     await delCache('pets:all');
     await delCache(`pets:id:${id}`);
-    res.json({ id: parseInt(id), name, species, age: parseInt(age), image_url: finalImageUrl });
+    const signedUrl = await getSignedDownloadUrl(finalImageUrl);
+    res.json({ id: parseInt(id), name, species, age: parseInt(age), image_url: signedUrl });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
