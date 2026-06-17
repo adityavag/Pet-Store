@@ -13,7 +13,7 @@ const app = express();
 app.use(morgan('dev'));
 app.use(express.json());
 
-const REGION = process.env.AWS_REGION || 'ap-southeast-2';
+const REGION = process.env.AWS_REGION;
 const s3Client = new S3Client({
   region: REGION
 });
@@ -72,7 +72,7 @@ app.use((req, res, next) => {
 
 // Configure Redis Client for ElastiCache / Local Redis
 const redisClient = redis.createClient({
-  url: `redis://${process.env.REDIS_HOST || '127.0.0.1'}:${process.env.REDIS_PORT || 6379}`,
+  url: `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
   socket: {
     connectTimeout: 1000 // fast timeout for initial connection attempts
   }
@@ -136,10 +136,10 @@ async function delCache(key) {
 }
 
 const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'root',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_DATABASE || 'pet_store',
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_DATABASE,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0
